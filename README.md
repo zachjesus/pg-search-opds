@@ -29,8 +29,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -r requirement
 The materialized view requires these extensions:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pg_trgm;    -- Fuzzy/trigram search
-CREATE EXTENSION IF NOT EXISTS pg_prewarm; -- Cache warming
+CREATE EXTENSION IF NOT EXISTS pg_trgm;    -- Fuzzy/trigram search *THE PROJECT GUTENBERG TRGM INSTALL MAY BE BROKEN AND NEED BE COMPLETELY MANUALLY REMOVED AND RE-INSTALLED
 ```
 
 ### Database Setup
@@ -40,11 +39,7 @@ CREATE EXTENSION IF NOT EXISTS pg_prewarm; -- Cache warming
    ```bash
    psql -U postgres -d gutendb -f mv_books_dc.sql
    ```
-3. Prewarm indexes into memory:
-   ```bash
-   psql -U postgres -d gutendb -f prewarm_mv_books_dc.sql
-   ```
-
+   
 ## Materialized View: mv_books_dc
 
 Denormalized view containing all book metadata for fast searching.
@@ -134,13 +129,13 @@ count = fts.count(fts.query().search("Shakespeare"))
 | FTS | `@@` websearch_to_tsquery | GIN tsvector | Fast | Stemmed word matching, supports operators |
 | FUZZY | `<%` word_similarity | GiST trigram | Slower | Typo tolerance ("Shakspeare" matches "Shakespeare") |
 
-**FTS (Full-Text Search)** - Default, fastest option:
+**FTS (Full-Text Search)**:
 - Uses PostgreSQL `websearch_to_tsquery` 
 - Supports boolean operators (see below)
 - Default sort: **Relevance** 
 - Best for: Precise searches, exact word matching, speed
 
-**Fuzzy Search** - Typo-tolerant (slower but still fast):
+**Fuzzy Search**:
 - Uses trigram similarity for typo tolerance
 - Default sort: **Relevance** 
 - Best for: User input with potential misspellings
@@ -148,12 +143,11 @@ count = fts.count(fts.query().search("Shakespeare"))
 ```python
 from FullTextSearch import SearchType
 
-# FTS (default) - fast, supports operators
+# FTS (default)
 q.search("Shakespeare")
 
-# Fuzzy - typo-tolerant, slower
+# Fuzzy
 q.search("Shakspeare", SearchType.FUZZY)
-
 ```
 
 ### FTS Search Operators
@@ -163,23 +157,17 @@ FTS mode supports PostgreSQL `websearch_to_tsquery` syntax:
 | Operator | Example | Meaning |
 |----------|---------|---------|
 | `"phrase"` | `"to be or not to be"` | Exact phrase match |
-| `word1 word2` | `shakespeare hamlet` | AND (both words required) |
+| `word1 word2` | `shakespeare and hamlet` | AND (both words required) |
 | `word1 or word2` | `romeo or juliet` | OR (either word) |
 | `-word` | `shakespeare -hamlet` | NOT (exclude word) |
 
-**Examples:**
-- `"exact phrase"` - Finds exact phrase
-- `adventure novel` - Books with both "adventure" AND "novel"
-- `twain or clemens` - Books with "twain" OR "clemens"
-- `science -fiction` - Books with "science" but NOT "fiction"
-
 ### Search Fields
 
-Search currently targets book text only (title/authors/subjects/bookshelves combined).
+Fuzzy search currently targets only title/authors/subjects/bookshelves combined.
+
+The fts targets Gutenbergs books public table tsvector field.
 
 ### Filter Methods
-
-All filters use optimized MN table joins or indexed columns for fast performance.
 
 ```python
 from FullTextSearch import LanguageCode, LoccClass, FileType, Encoding
@@ -333,15 +321,6 @@ Returns homepage with:
 - Groups: All curated bookshelves with 20 sample publications each
 
 #### Search
-```
-GET /opds/search
-GET /opds/search?query=shakespeare
-GET /opds/search?query=twain&field=fts_keyword&sort=relevance
-```
-
-**Search Types:**
-- **Fuzzy** (`field=fuzzy_keyword`): Typo-tolerant, slower, sorts by downloads by default
-- **FTS** (`field=fts_keyword`): Fast, exact matching, supports operators, sorts by relevance by default
 
 **Query Parameters:**
 | Parameter | Values | Default | Description |
@@ -357,15 +336,9 @@ GET /opds/search?query=twain&field=fts_keyword&sort=relevance
 | page | Page number | 1 | Pagination |
 | limit | 1-100 | 28 | Results per page |
 
-**FTS Operators** (when using `field=fts_keyword`):
-- `"exact phrase"` - Phrase matching
-- `word1 word2` - AND (both required)
-- `word1 or word2` - OR (either word)
-- `-word` - NOT (exclude)
-
 **Example searches:**
-- `/opds/search?query=shakespeare` - Fuzzy search (typo-tolerant)
-- `/opds/search?query=shakespeare&field=fts_keyword` - FTS search (fast, exact)
+- `/opds/search?query=shakespeare` - Fuzzy search 
+- `/opds/search?query=shakespeare&field=fts_keyword` - FTS search
 - `/opds/search?query="romeo and juliet"` - Exact phrase (FTS)
 - `/opds/search?query=twain or clemens` - OR operator (FTS)
 - `/opds/search?query=science -fiction` - Exclude word (FTS)
@@ -379,7 +352,7 @@ GET /opds/loccs?parent=PS&query=novel
 
 Hierarchical navigation through Library of Congress Classification:
 - Without `parent`: Shows top-level classes (A, B, C, D, E, F, G, H, J, K, L, M, N, P, Q, R, S, T, U, V, Z)
-- With `parent`: Shows subclasses or books (if leaf node)
+- With `parent`: Shows subclasses or books (if leaf node) *ONLY GOES TWO LAYERS SO FOR EXAMPLE ALL CODES STARTING A WILL BE LISTED UNDER loccs?parent=P
 - Supports search and filtering within any LoCC class
 - Shows **Top Subjects** facet when viewing books
 
@@ -399,7 +372,7 @@ GET /opds/subjects?id=1
 GET /opds/subjects?id=1&query=novel
 ```
 
-Lists top 50 or so subjects.
+Lists top 50 or so subjects (by book count).
 
 #### LOCC
 ```
