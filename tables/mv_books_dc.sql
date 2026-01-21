@@ -2,10 +2,6 @@
 
 BEGIN;
 
-SET LOCAL work_mem = '256MB';
-SET LOCAL maintenance_work_mem = '1GB';
-SET LOCAL max_parallel_workers_per_gather = 4;
-
 SET LOCAL client_min_messages = WARNING;
 
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
@@ -274,9 +270,6 @@ RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    SET LOCAL work_mem = '256MB';
-    SET LOCAL maintenance_work_mem = '1GB';
-
     REFRESH MATERIALIZED VIEW CONCURRENTLY mv_books_dc;
     ANALYZE mv_books_dc;
 END;
