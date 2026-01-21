@@ -7,7 +7,6 @@ from .constants import (
     Language,
     LoCCMainClass,
     OrderBy,
-    SearchField,
     SearchType,
 )
 from .full_text_search import FullTextSearch
@@ -25,7 +24,6 @@ def test(name: str, q):
         first = data["results"][0] if data["results"] else None
         if first:
             title = first.get("title", first.get("name", "N/A"))[:40]
-            # crosswalks may provide different author keys; try common ones
             author = (
                 first.get("author", first.get("all_authors", "Unknown")) or "Unknown"
             )
@@ -42,74 +40,19 @@ print("=" * 130)
 print(f"{'Test':<50} | {'Count':>6} | {'Time':>8} | First Result")
 print("=" * 130)
 
-# === Search: FTS (all fields) ===
+# === Search: FTS ===
 print("-" * 130)
 print("FTS Search (stemming, GIN tsvector)")
 print("-" * 130)
 test("FTS BOOK", s.query().search("Shakespeare")[1, 10])
-test("FTS TITLE", s.query().search("Adventure", SearchField.TITLE)[1, 10])
-test("FTS SUBTITLE", s.query().search("Volume", SearchField.SUBTITLE)[1, 10])
-test("FTS AUTHOR", s.query().search("Twain", SearchField.AUTHOR)[1, 10])
-test("FTS SUBJECT", s.query().search("History", SearchField.SUBJECT)[1, 10])
-test("FTS BOOKSHELF", s.query().search("Science Fiction", SearchField.BOOKSHELF)[1, 10])
-test("FTS ATTRIBUTE", s.query().search("illustrated", SearchField.ATTRIBUTE)[1, 10])
 
-# === Search: FUZZY (fields with trigram indexes) ===
+# === Search: FUZZY ===
 print("-" * 130)
 print("FUZZY Search (typo-tolerant, GiST trigram)")
 print("-" * 130)
 test(
     "FUZZY BOOK",
-    s.query().search("Shakspeare", SearchField.BOOK, SearchType.FUZZY)[1, 10],
-)
-test(
-    "FUZZY TITLE",
-    s.query().search("Advntures", SearchField.TITLE, SearchType.FUZZY)[1, 10],
-)
-test(
-    "FUZZY SUBTITLE",
-    s.query().search("Volumee", SearchField.SUBTITLE, SearchType.FUZZY)[1, 10],
-)
-test(
-    "FUZZY AUTHOR",
-    s.query().search("Twian", SearchField.AUTHOR, SearchType.FUZZY)[1, 10],
-)
-test(
-    "FUZZY SUBJECT",
-    s.query().search("Ficton", SearchField.SUBJECT, SearchType.FUZZY)[1, 10],
-)
-test(
-    "FUZZY BOOKSHELF",
-    s.query().search("Scince Ficton", SearchField.BOOKSHELF, SearchType.FUZZY)[1, 10],
-)
-
-# === Search: CONTAINS (fields with trigram indexes) ===
-print("-" * 130)
-print("CONTAINS Search (substring, GIN trigram)")
-print("-" * 130)
-test(
-    "CONTAINS BOOK",
-    s.query().search("venturer", SearchField.BOOK, SearchType.CONTAINS)[1, 10],
-)
-test(
-    "CONTAINS TITLE",
-    s.query().search("venture", SearchField.TITLE, SearchType.CONTAINS)[1, 10],
-)
-test(
-    "CONTAINS SUBTITLE",
-    s.query().search("Vol", SearchField.SUBTITLE, SearchType.CONTAINS)[1, 10],
-)
-test(
-    "CONTAINS AUTHOR",
-    s.query().search("wain", SearchField.AUTHOR, SearchType.CONTAINS)[1, 10],
-)
-test(
-    "CONTAINS SUBJECT",
-    s.query().search("iction", SearchField.SUBJECT, SearchType.CONTAINS)[1, 10],
-)
-test(
-    "CONTAINS BOOKSHELF",
-    s.query().search("Fiction", SearchField.BOOKSHELF, SearchType.CONTAINS)[1, 10],
+    s.query().search("Shakspeare", search_type=SearchType.FUZZY)[1, 10],
 )
 
 # === Filters: PK ===
@@ -168,20 +111,20 @@ print("-" * 130)
 test(
     "FTS AUTHOR + FTS SUBJECT",
     s.query()
-    .search("Shakespeare", SearchField.AUTHOR)
-    .search("Tragedy", SearchField.SUBJECT)[1, 10],
+    .search("Shakespeare")
+    .search("Tragedy")[1, 10],
 )
 test(
     "FTS TITLE + FTS BOOKSHELF",
     s.query()
-    .search("Adventure", SearchField.TITLE)
-    .search("Children", SearchField.BOOKSHELF)[1, 10],
+    .search("Adventure")
+    .search("Children")[1, 10],
 )
 test(
     "FUZZY AUTHOR + FTS TITLE",
     s.query()
-    .search("Shakspeare", SearchField.AUTHOR, SearchType.FUZZY)
-    .search("Hamlet", SearchField.TITLE)[1, 10],
+    .search("Shakspeare", search_type=SearchType.FUZZY)
+    .search("Hamlet")[1, 10],
 )
 
 # === Custom SQL ===
@@ -227,13 +170,13 @@ test("FTS + file_type", s.query().search("Novel").file_type(FileType.EPUB)[1, 10
 test(
     "FUZZY TITLE + downloads_gte",
     s.query()
-    .search("Shakspeare", SearchField.TITLE, SearchType.FUZZY)
+    .search("Shakspeare", search_type=SearchType.FUZZY)
     .downloads_gte(1000)[1, 10],
 )
 test("author_id + file_type", s.query().author_id(53).file_type(FileType.TXT)[1, 10])
 test(
     "FTS BOOKSHELF + lang",
-    s.query().search("Mystery", SearchField.BOOKSHELF).lang(Language.EN)[1, 10],
+    s.query().search("Mystery").lang(Language.EN)[1, 10],
 )
 test("locc + public_domain", s.query().locc(LoCCMainClass.P).public_domain()[1, 10])
 

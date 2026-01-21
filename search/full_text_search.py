@@ -28,12 +28,6 @@ __all__ = [
 
 _FIELD_COLS = {
     SearchField.BOOK: ("tsvec", "book_text"),
-    SearchField.TITLE: ("title_tsvec", "title"),
-    SearchField.SUBTITLE: ("subtitle_tsvec", "subtitle"),
-    SearchField.AUTHOR: ("author_tsvec", "all_authors"),
-    SearchField.SUBJECT: ("subject_tsvec", "all_subjects"),
-    SearchField.BOOKSHELF: ("bookshelf_tsvec", "bookshelf_text"),
-    SearchField.ATTRIBUTE: ("attribute_tsvec", "attribute_text"),
 }
 _ORDER_COLUMNS = {
     OrderBy.DOWNLOADS: ("downloads", SortDirection.DESC, None),
@@ -50,7 +44,7 @@ _SELECT = (
     "reading_level, coverpage, format_filenames, format_filetypes, "
     "format_hr_filetypes, format_mediatypes, format_extents"
 )
-_SUBQUERY = """book_id, title, all_authors, all_subjects, downloads, CAST(release_date AS text) AS release_date,
+_SUBQUERY = """book_id, title, all_authors, downloads, CAST(release_date AS text) AS release_date,
     copyrighted, lang_codes, is_audio,
     creator_ids, creator_names, creator_roles,
     subject_ids, subject_names, bookshelf_ids, bookshelf_names,
@@ -60,8 +54,7 @@ _SUBQUERY = """book_id, title, all_authors, all_subjects, downloads, CAST(releas
     max_author_birthyear, min_author_birthyear,
     max_author_deathyear, min_author_deathyear,
     locc_codes,
-    tsvec, title_tsvec, subtitle_tsvec, author_tsvec, subject_tsvec, bookshelf_tsvec, attribute_tsvec,
-    book_text, bookshelf_text, attribute_text, subtitle"""
+    tsvec, book_text"""
 
 
 class Config:
@@ -107,28 +100,16 @@ class SearchQuery:
         self._sort_dir = direction
         return self
 
-    def _new_param(self, value: object, wrap_percent: bool = False) -> tuple[str, dict]:
+    def _new_param(self, value: object) -> tuple[str, dict]:
         pname = f"__p{self._param_counter}"
         self._param_counter += 1
-        if wrap_percent and isinstance(value, str):
-            value = f"%{value}%"
         return pname, {pname: value}
 
-    def filter(
-        self,
-        sql_template: str,
-        *values: Union[object, Tuple[object, bool]],
-        wrap_percent: bool = False,
-    ) -> "SearchQuery":
+    def filter(self, sql_template: str, *values: object) -> "SearchQuery":
         params: dict = {}
         placeholders: list[str] = []
         for v in values:
-            if isinstance(v, tuple) and len(v) >= 2 and isinstance(v[1], bool):
-                val, local_wrap = v[0], v[1]
-            else:
-                val, local_wrap = v, False
-            # wrap_percent adds %value% for ILIKE/contains filters when needed
-            pname, p = self._new_param(val, wrap_percent=(local_wrap or wrap_percent))
+            pname, p = self._new_param(v)
             params.update(p)
             placeholders.append(f":{pname}")
         sql = sql_template.format(*placeholders)
@@ -151,12 +132,9 @@ class SearchQuery:
             pname, p = self._new_param(txt)
             sql = f"{fts_col} @@ websearch_to_tsquery('english', :{pname})"
             self._search.append((sql, p, fts_col))
-        elif search_type == SearchType.FUZZY:
+        else:
             pname, p = self._new_param(txt)
             self._search.append((f":{pname} <% {text_col}", p, text_col))
-        else:
-            pname, p = self._new_param(txt, wrap_percent=True)
-            self._search.append((f"{text_col} ILIKE :{pname}", p, text_col))
         return self
 
     # Filter Methods
@@ -304,7 +282,7 @@ class SearchQuery:
             sql, p, col = self._search[-1]
             val = next(iter(p.values())) if p else ""
             params["rank_q"] = str(val).replace("%", "")
-            if "<%" in sql or "ILIKE" in sql:
+            if "<%" in sql:
                 return f"word_similarity(:rank_q, {col}) DESC, downloads DESC"
             return f"ts_rank_cd({col}, websearch_to_tsquery('english', :rank_q)) DESC, downloads DESC"
 

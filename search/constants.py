@@ -33,17 +33,10 @@ class Encoding(str, Enum):
 class SearchType(str, Enum):
     FTS = "fts"
     FUZZY = "fuzzy"
-    CONTAINS = "contains"
 
 
 class SearchField(str, Enum):
     BOOK = "book"
-    TITLE = "title"
-    AUTHOR = "author"
-    SUBJECT = "subject"
-    BOOKSHELF = "bookshelf"
-    SUBTITLE = "subtitle"
-    ATTRIBUTE = "attribute"
 
 
 class OrderBy(str, Enum):

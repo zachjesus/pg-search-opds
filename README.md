@@ -56,7 +56,6 @@ Denormalized view containing all book metadata for fast searching.
 | book_id | int | Primary key |
 | title | text | Book title |
 | all_authors | text | Pipe-delimited author names |
-| all_subjects | text | Pipe-delimited subjects |
 | downloads | int | Download count (last 30 days) |
 | release_date | date | Publication date (denormalized for fast sorting) |
 | lang_codes | text[] | Array of language codes |
@@ -87,10 +86,9 @@ Denormalized view containing all book metadata for fast searching.
 | Type | Columns | Use Case |
 |------|---------|----------|
 | B-tree | downloads, release_date, copyrighted, is_audio, author birth/death years | Sorting, equality filters |
-| GIN tsvector | tsvec, title_tsvec, author_tsvec, subject_tsvec, etc. | Full-text search |
-| GIN trigram | title, all_authors, book_text, etc. | Substring search (ILIKE) |
-| GiST trigram | title, all_authors, book_text, etc. | Fuzzy/typo-tolerant search |
-| GIN array | lang_codes, locc_codes | Array containment |
+| GIN tsvector | tsvec | Full-text search |
+| GiST trigram | book_text | Fuzzy/typo-tolerant search |
+| GIN array | lang_codes | Array containment |
 
 ### Refresh
 
@@ -111,7 +109,7 @@ psql -U postgres -d gutendb -c "SELECT refresh_mv_books_dc();"
 ### Basic Usage
 
 ```python
-from FullTextSearch import FullTextSearch, SearchField, SearchType, OrderBy, Crosswalk
+from FullTextSearch import FullTextSearch, SearchType, OrderBy, Crosswalk
 
 fts = FullTextSearch()
 
@@ -135,7 +133,6 @@ count = fts.count(fts.query().search("Shakespeare"))
 |------|----------|-------|-------|----------|
 | FTS | `@@` websearch_to_tsquery | GIN tsvector | Fast | Stemmed word matching, supports operators |
 | FUZZY | `<%` word_similarity | GiST trigram | Slower | Typo tolerance ("Shakspeare" matches "Shakespeare") |
-| CONTAINS | `ILIKE` | GIN trigram | Medium | Substring matching ("venture" matches "Adventure") |
 
 **FTS (Full-Text Search)** - Default, fastest option:
 - Uses PostgreSQL `websearch_to_tsquery` 
@@ -149,17 +146,14 @@ count = fts.count(fts.query().search("Shakespeare"))
 - Best for: User input with potential misspellings
 
 ```python
-from FullTextSearch import SearchField, SearchType
+from FullTextSearch import SearchType
 
 # FTS (default) - fast, supports operators
 q.search("Shakespeare")
-q.search("Adventure", SearchField.TITLE)
 
 # Fuzzy - typo-tolerant, slower
-q.search("Shakspeare", SearchField.AUTHOR, SearchType.FUZZY)
+q.search("Shakspeare", SearchType.FUZZY)
 
-# Contains - substring matching
-q.search("venture", SearchField.TITLE, SearchType.CONTAINS)
 ```
 
 ### FTS Search Operators
@@ -181,15 +175,7 @@ FTS mode supports PostgreSQL `websearch_to_tsquery` syntax:
 
 ### Search Fields
 
-| Field | FTS | FUZZY | CONTAINS |
-|-------|-----|-------|----------|
-| BOOK | Yes | Yes | Yes |
-| TITLE | Yes | Yes | Yes |
-| SUBTITLE | Yes | Yes | Yes |
-| AUTHOR | Yes | Yes | Yes |
-| SUBJECT | Yes | Yes | Yes |
-| BOOKSHELF | Yes | Yes | Yes |
-| ATTRIBUTE | Yes | No | No |
+Search currently targets book text only (title/authors/subjects/bookshelves combined).
 
 ### Filter Methods
 
@@ -247,11 +233,11 @@ q.where("COALESCE(array_length(creator_ids, 1), 0) > :n", n=2)
 All methods return `self` for chaining:
 
 ```python
-from FullTextSearch import SearchField, OrderBy, LanguageCode
+from FullTextSearch import OrderBy, LanguageCode
 
 result = fts.execute(
     fts.query()
-    .search("Adventure", SearchField.TITLE)
+    .search("Adventure")
     .lang(LanguageCode.EN)
     .public_domain()
     .downloads_gte(100)

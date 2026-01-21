@@ -11,7 +11,6 @@ from search.constants import (
     Language,
     LoCCMainClass,
     OrderBy,
-    SearchField,
     SearchType,
     SortDirection,
 )
@@ -22,19 +21,13 @@ LANGUAGE_LIST = [{"code": l.code, "label": l.label} for l in Language]
 _VALID_SORTS = set(OrderBy._value2member_map_.keys())
 
 
-def _parse_field(field: str) -> tuple[SearchField, SearchType]:
-    """Parse field param to (SearchField, SearchType). Default is fuzzy search."""
-    if field.startswith("fts_"):
-        search_type, field_name = SearchType.FTS, field[4:]
-    elif field.startswith("fuzzy_"):
-        search_type, field_name = SearchType.FUZZY, field[6:]
-    else:
-        search_type, field_name = SearchType.FUZZY, field
-
-    field_name = "book" if field_name == "keyword" else field_name
-    if field_name not in {f.value for f in SearchField}:
-        return SearchField.BOOK, SearchType.FUZZY
-    return SearchField(field_name), search_type
+def _parse_search_type(field: str) -> SearchType:
+    """Parse field param to SearchType. Field name is ignored."""
+    if field.startswith("fts_") or field == "fts":
+        return SearchType.FTS
+    if field.startswith("fuzzy_") or field == "fuzzy":
+        return SearchType.FUZZY
+    return SearchType.FUZZY
 
 
 def _facet_link(href: str, title: str, is_active: bool) -> dict:
@@ -71,8 +64,7 @@ class API:
     ):
         """Apply common filters to a query object."""
         if query.strip():
-            sf, st = _parse_field("keyword")
-            q.search(query, field=sf, search_type=st)
+            q.search(query, search_type=_parse_search_type("keyword"))
         if lang:
             q.lang(lang)
         if copyrighted == "true":
@@ -301,13 +293,13 @@ class API:
             ],
             "navigation": [
                 {
-                    "href": "/opds/search?field=fuzzy_keyword",
+                    "href": "/opds/search?field=fuzzy",
                     "title": "Search Fuzzy (Typo-Tolerant, Slower)",
                     "type": "application/opds+json",
                     "rel": "subsection",
                 },
                 {
-                    "href": "/opds/search?field=fts_keyword",
+                    "href": "/opds/search?field=fts",
                     "title": 'Search FTS (Strict, Faster, operators: "quotes", or, and, - for negate)',
                     "type": "application/opds+json",
                     "rel": "subsection",
@@ -968,7 +960,7 @@ class API:
         query: str = "",
         page: int = 1,
         limit: int = 28,
-        field: str = "keyword",
+        field: str = "fuzzy",
         lang: str = "",
         copyrighted: str = "",
         audiobook: str = "",
@@ -978,12 +970,12 @@ class API:
     ):
         """Full-text search with facets."""
         page, limit = _parse_pagination(page, limit)
-        search_field, search_type = _parse_field(field)
+        search_type = _parse_search_type(field)
 
         try:
             q = self.fts.query(crosswalk=Crosswalk.OPDS)
             if query.strip():
-                q.search(query, field=search_field, search_type=search_type)
+                q.search(query, search_type=search_type)
 
             self._apply_sort(q, sort, sort_order, bool(query.strip()))
 
@@ -1006,7 +998,7 @@ class API:
             top_subjects = None
             if query.strip() or locc or lang:
                 top_subjects = self._get_top_subjects_for_search(
-                    query, search_field, search_type, lang, copyrighted, audiobook, locc
+                    query, search_type, lang, copyrighted, audiobook, locc
                 )
         except Exception as e:
             cherrypy.log(f"Search error: {e}")
@@ -1069,13 +1061,13 @@ class API:
         return feed
 
     def _get_top_subjects_for_search(
-        self, query, search_field, search_type, lang, copyrighted, audiobook, locc
+        self, query, search_type, lang, copyrighted, audiobook, locc
     ):
         """Get top subjects for search results."""
         try:
             q_sub = self.fts.query()
             if query.strip():
-                q_sub.search(query, field=search_field, search_type=search_type)
+                q_sub.search(query, search_type=search_type)
             if lang:
                 q_sub.lang(lang)
             if copyrighted == "true":
