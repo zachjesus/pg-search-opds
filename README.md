@@ -2,17 +2,15 @@
 
 A PostgreSQL-backed full-text search engine for Project Gutenberg and the new OPDS 2.0 catalog.
 
-<img width="1700" height="414" alt="image" src="https://github.com/user-attachments/assets/0d90690f-cb01-42c3-be9d-800f01857922" />
+https://github.com/user-attachments/assets/4e75d60b-e6ca-4ba6-a72d-c112ecfef28f
 
-<img width="1659" height="608" alt="image" src="https://github.com/user-attachments/assets/e701c1d6-9263-484b-bc07-6bedbc3dc399" />
+<img width="1700" height="414" alt="image" src="https://github.com/user-attachments/assets/0d90690f-cb01-42c3-be9d-800f01857922" />
 
 <img width="1648" height="964" alt="image" src="https://github.com/user-attachments/assets/3a0eee9e-e6c1-4854-aabf-2b0598576864" />
 
 <img width="1682" height="616" alt="image" src="https://github.com/user-attachments/assets/226f9562-679f-430e-9a48-cec4ff7d075b" />
 
 <img width="1409" height="904" alt="image" src="https://github.com/user-attachments/assets/e714f27d-9032-4dbe-8d07-b4b008bbd528" />
-
-https://github.com/user-attachments/assets/4e75d60b-e6ca-4ba6-a72d-c112ecfef28f
 
 Video of DB and Search Engine Interface running on a server with 1GB ram and 1 core CPU. Search returns results with FULL metadata in around 20-30ms in most cases even on minimal hardware.
 
