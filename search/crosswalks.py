@@ -1,18 +1,114 @@
 import html
 from typing import Any
+from itertools import zip_longest
 
-from .constants import Crosswalk
+from .constants import Crosswalk, Language
 from .helpers import format_dict_result
+
+LANGUAGE_LABELS = {lang.code: lang.label for lang in Language}
+
+def _rights_text(copyrighted: int | None) -> str:
+    return (
+        "Copyrighted. Read the copyright notice inside this book for details."
+        if copyrighted
+        else "Public domain in the USA."
+    )
+
+
+def _build_creators(row) -> list[dict[str, Any]]:
+    names = list(row.creator_names) if row.creator_names else []
+    roles = list(row.creator_roles) if row.creator_roles else []
+    ids = list(row.creator_ids) if row.creator_ids else []
+    creators = []
+    for name, role, cid in zip_longest(names, roles, ids, fillvalue=None):
+        if not name:
+            continue
+        creators.append({"id": cid, "name": name, "role": role or "Author"})
+    return creators
+
+
+def _build_subjects(row) -> list[dict[str, Any]]:
+    names = list(row.subject_names) if row.subject_names else []
+    ids = list(row.subject_ids) if row.subject_ids else []
+    return [
+        {"id": sid, "subject": name}
+        for name, sid in zip_longest(names, ids, fillvalue=None)
+        if name
+    ]
+
+
+def _build_bookshelves(row) -> list[dict[str, Any]]:
+    names = list(row.bookshelf_names) if row.bookshelf_names else []
+    ids = list(row.bookshelf_ids) if row.bookshelf_ids else []
+    return [
+        {"id": bid, "bookshelf": name}
+        for name, bid in zip_longest(names, ids, fillvalue=None)
+        if name
+    ]
+
+
+def _build_formats(row) -> list[dict[str, Any]]:
+    filenames = list(row.format_filenames) if row.format_filenames else []
+    filetypes = list(row.format_filetypes) if row.format_filetypes else []
+    hr_filetypes = list(row.format_hr_filetypes) if row.format_hr_filetypes else []
+    mediatypes = list(row.format_mediatypes) if row.format_mediatypes else []
+    extents = list(row.format_extents) if row.format_extents else []
+    results = []
+    for fn, ftype, hr, med, extent in zip_longest(
+        filenames, filetypes, hr_filetypes, mediatypes, extents, fillvalue=None
+    ):
+        if not fn:
+            continue
+        results.append(
+            {
+                "filename": fn,
+                "filetype": ftype,
+                "hr_filetype": hr,
+                "mediatype": med,
+                "extent": extent,
+            }
+        )
+    return results
 
 
 @format_dict_result
 def crosswalk_full(row) -> dict[str, Any]:
+    creators = _build_creators(row)
+    subjects = _build_subjects(row)
+    bookshelves = _build_bookshelves(row)
+    formats = _build_formats(row)
+    language = [
+        {"code": code, "name": LANGUAGE_LABELS.get(code, code)}
+        for code in (list(row.lang_codes) if row.lang_codes else [])
+        if code
+    ]
+    coverage = [
+        {"id": code, "locc": code}
+        for code in (list(row.locc_codes) if row.locc_codes else [])
+        if code
+    ]
+    dcmitypes = [{"dcmitype": t} for t in (list(row.dcmitypes) if row.dcmitypes else []) if t]
+    summary = list(row.summary) if row.summary else []
+    credits = list(row.credits) if row.credits else []
+    coverpage = list(row.coverpage) if row.coverpage else []
     return {
         "book_id": row.book_id,
         "title": row.title,
         "author": row.all_authors,
         "downloads": row.downloads,
-        "dc": row.dc,
+        "creators": creators,
+        "language": language,
+        "subjects": subjects,
+        "bookshelves": bookshelves,
+        "date": row.release_date,
+        "format": formats,
+        "coverpage": coverpage,
+        "summary": summary,
+        "credits": credits,
+        "type": dcmitypes,
+        "rights": _rights_text(row.copyrighted),
+        "coverage": coverage,
+        "publisher": {"raw": row.publisher} if row.publisher else None,
     }
 
 
@@ -28,20 +124,28 @@ def crosswalk_mini(row) -> dict[str, Any]:
 
 @format_dict_result
 def crosswalk_pg(row) -> dict[str, Any]:
-    dc = row.dc or {}
+    creators = _build_creators(row)
+    subjects = [s["subject"] for s in _build_subjects(row) if s.get("subject")]
+    bookshelves = [
+        b["bookshelf"] for b in _build_bookshelves(row) if b.get("bookshelf")
+    ]
+    language = [
+        {"code": code, "name": LANGUAGE_LABELS.get(code, code)}
+        for code in (list(row.lang_codes) if row.lang_codes else [])
+        if code
+    ]
+    formats = _build_formats(row)
     return {
         "ebook_no": row.book_id,
         "title": row.title,
         "contributors": [
             {"name": c.get("name"), "role": c.get("role", "Author")}
-            for c in dc.get("creators", [])
+            for c in creators
         ],
-        "language": dc.get("language"),
-        "subjects": [s["subject"] for s in dc.get("subjects", []) if s.get("subject")],
-        "bookshelves": [
-            b["bookshelf"] for b in dc.get("bookshelves", []) if b.get("bookshelf")
-        ],
-        "release_date": dc.get("date"),
+        "language": language,
+        "subjects": subjects,
+        "bookshelves": bookshelves,
+        "release_date": row.release_date,
         "downloads_last_30_days": row.downloads,
         "files": [
             {
@@ -49,26 +153,29 @@ def crosswalk_pg(row) -> dict[str, Any]:
                 "type": f.get("mediatype"),
                 "size": f.get("extent"),
             }
-            for f in dc.get("format", [])
+            for f in formats
             if f.get("filename")
         ],
-        "cover_url": (dc.get("coverpage") or [None])[0],
+        "cover_url": (list(row.coverpage) if row.coverpage else [None])[0],
     }
 
 
 @format_dict_result
 def crosswalk_opds(row) -> dict[str, Any]:
     """Transform row to OPDS 2.0 publication format per spec."""
-    dc = row.dc or {}
+    creators = _build_creators(row)
+    subjects = [s["subject"] for s in _build_subjects(row) if s.get("subject")]
+    bookshelves = _build_bookshelves(row)
+    formats = _build_formats(row)
+    locc_codes = [c for c in (list(row.locc_codes) if row.locc_codes else []) if c]
 
     metadata = {
         "@type": "http://schema.org/Book",
         "identifier": f"urn:gutenberg:{row.book_id}",
         "title": row.title,
-        "language": (dc.get("language") or [{}])[0].get("code") or "en",
+        "language": (list(row.lang_codes) if row.lang_codes else ["en"])[0] or "en",
     }
 
-    creators = dc.get("creators", [])
     if creators and creators[0].get("name"):
         p = creators[0]
         author = {"name": p["name"], "sortAs": p["name"]}
@@ -76,34 +183,19 @@ def crosswalk_opds(row) -> dict[str, Any]:
             author["identifier"] = f"https://www.gutenberg.org/ebooks/author/{p['id']}"
         metadata["author"] = author
 
-    if dc.get("date"):
-        metadata["published"] = dc["date"]
-
-    for m in dc.get("marc", []):
-        if m.get("code") == 508 and "Updated:" in (m.get("text") or ""):
-            try:
-                modified = m["text"].split("Updated:")[1].strip().split()[0].rstrip(".")
-                if modified:
-                    metadata["modified"] = modified
-            except (IndexError, AttributeError):
-                pass
-            break
+    if row.release_date:
+        metadata["published"] = row.release_date
 
     desc_parts = []
-    if summary := (dc.get("summary") or [None])[0]:
+    if summary := (list(row.summary) if row.summary else [None])[0]:
         desc_parts.append(summary)
-    if notes := dc.get("description"):
-        desc_parts.append(f"Notes: {'; '.join(notes)}")
-    if credits := (dc.get("credits") or [None])[0]:
+    if credits := (list(row.credits) if row.credits else [None])[0]:
         desc_parts.append(f"Credits: {credits}")
-    for m in dc.get("marc", []):
-        if m.get("code") == 908 and m.get("text"):
-            desc_parts.append(f"Reading Level: {m['text']}")
-            break
-    if dcmitype := [t["dcmitype"] for t in dc.get("type", []) if t.get("dcmitype")]:
+    if row.reading_level:
+        desc_parts.append(f"Reading Level: {row.reading_level}")
+    if dcmitype := [t for t in (list(row.dcmitypes) if row.dcmitypes else []) if t]:
         desc_parts.append(f"Category: {', '.join(dcmitype)}")
-    if rights := dc.get("rights"):
-        desc_parts.append(f"Rights: {rights}")
+    desc_parts.append(f"Rights: {_rights_text(row.copyrighted)}")
     desc_parts.append(f"Downloads: {row.downloads}")
 
     if desc_parts:
@@ -111,16 +203,15 @@ def crosswalk_opds(row) -> dict[str, Any]:
             "<p>" + "</p><p>".join(html.escape(p) for p in desc_parts) + "</p>"
         )
 
-    subjects = [s["subject"] for s in dc.get("subjects", []) if s.get("subject")]
-    subjects += [c["locc"] for c in dc.get("coverage", []) if c.get("locc")]
+    subjects += locc_codes
     if subjects:
         metadata["subject"] = subjects
 
-    if pub_raw := (dc.get("publisher") or {}).get("raw"):
-        metadata["publisher"] = pub_raw
+    if row.publisher:
+        metadata["publisher"] = row.publisher
 
     collections = []
-    for b in dc.get("bookshelves", []):
+    for b in bookshelves:
         if b.get("bookshelf"):
             collections.append(
                 {
@@ -128,14 +219,13 @@ def crosswalk_opds(row) -> dict[str, Any]:
                     "identifier": f"https://www.gutenberg.org/ebooks/bookshelf/{b.get('id', '')}",
                 }
             )
-    for c in dc.get("coverage", []):
-        if c.get("locc"):
-            collections.append(
-                {
-                    "name": c["locc"],
-                    "identifier": f"https://www.gutenberg.org/ebooks/locc/{c.get('id', '')}",
-                }
-            )
+    for code in locc_codes:
+        collections.append(
+            {
+                "name": code,
+                "identifier": f"https://www.gutenberg.org/ebooks/locc/{code}",
+            }
+        )
     if collections:
         metadata["belongsTo"] = {"collection": collections}
 
@@ -147,7 +237,7 @@ def crosswalk_opds(row) -> dict[str, Any]:
 
     # Try target format first, then fallbacks
     for try_format in [target_format] + fallback_formats:
-        for f in dc.get("format", []):
+        for f in formats:
             fn = f.get("filename")
             if not fn:
                 continue
@@ -187,7 +277,7 @@ def crosswalk_opds(row) -> dict[str, Any]:
     result = {"metadata": metadata, "links": links}
 
     images = []
-    for f in dc.get("format", []):
+    for f in formats:
         ft = f.get("filetype") or ""
         fn = f.get("filename")
         if fn and ("cover.medium" in ft or ("cover" in ft and not images)):

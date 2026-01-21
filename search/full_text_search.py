@@ -39,12 +39,24 @@ _ORDER_COLUMNS = {
     OrderBy.DOWNLOADS: ("downloads", SortDirection.DESC, None),
     OrderBy.TITLE: ("title", SortDirection.ASC, None),
     OrderBy.AUTHOR: ("all_authors", SortDirection.ASC, "LAST"),
-    OrderBy.RELEASE_DATE: ("release_date", SortDirection.DESC, "LAST"),
+    OrderBy.RELEASE_DATE: ("CAST(release_date AS date)", SortDirection.DESC, "LAST"),
     OrderBy.RANDOM: ("RANDOM()", None, None),
 }
-_SELECT = "book_id, title, all_authors, downloads, dc, is_audio"
-_SUBQUERY = """book_id, title, all_authors, all_subjects, downloads, release_date, dc,
+_SELECT = (
+    "book_id, title, all_authors, downloads, CAST(release_date AS text) AS release_date, copyrighted, lang_codes, "
+    "creator_ids, creator_names, creator_roles, "
+    "subject_ids, subject_names, bookshelf_ids, bookshelf_names, "
+    "locc_codes, is_audio, dcmitypes, publisher, summary, credits, "
+    "reading_level, coverpage, format_filenames, format_filetypes, "
+    "format_hr_filetypes, format_mediatypes, format_extents"
+)
+_SUBQUERY = """book_id, title, all_authors, all_subjects, downloads, CAST(release_date AS text) AS release_date,
     copyrighted, lang_codes, is_audio,
+    creator_ids, creator_names, creator_roles,
+    subject_ids, subject_names, bookshelf_ids, bookshelf_names,
+    dcmitypes, publisher, summary, credits, reading_level,
+    coverpage, format_filenames, format_filetypes, format_hr_filetypes,
+    format_mediatypes, format_extents,
     max_author_birthyear, min_author_birthyear,
     max_author_deathyear, min_author_deathyear,
     locc_codes,
@@ -67,7 +79,7 @@ class Config:
 @dataclass
 class SearchQuery:
     _search: list[tuple[str, dict, str]] = field(default_factory=list)
-    _filter: list[tuple[str, dict]] = field(default_factory=list)
+    _filters: list[tuple[str, dict]] = field(default_factory=list)
     _order: OrderBy = OrderBy.DOWNLOADS
     _sort_dir: SortDirection | None = None
     _page: int = 1
@@ -102,7 +114,7 @@ class SearchQuery:
             value = f"%{value}%"
         return pname, {pname: value}
 
-    def add_filter(
+    def filter(
         self,
         sql_template: str,
         *values: Union[object, Tuple[object, bool]],
@@ -115,11 +127,12 @@ class SearchQuery:
                 val, local_wrap = v[0], v[1]
             else:
                 val, local_wrap = v, False
+            # wrap_percent adds %value% for ILIKE/contains filters when needed
             pname, p = self._new_param(val, wrap_percent=(local_wrap or wrap_percent))
             params.update(p)
             placeholders.append(f":{pname}")
         sql = sql_template.format(*placeholders)
-        self._filter.append((sql, params))
+        self._filters.append((sql, params))
         return self
 
     def search(
@@ -149,23 +162,23 @@ class SearchQuery:
     # Filter Methods
 
     def etext(self, nr: int) -> SearchQuery:
-        return self.add_filter("book_id = {}", int(nr))
+        return self.filter("book_id = {}", int(nr))
 
     def etexts(self, nrs: list[int]) -> SearchQuery:
-        return self.add_filter("book_id = ANY({})", [int(n) for n in nrs])
+        return self.filter("book_id = ANY({})", [int(n) for n in nrs])
 
     def downloads_gte(self, n: int) -> SearchQuery:
-        return self.add_filter("downloads >= {}", int(n))
+        return self.filter("downloads >= {}", int(n))
 
     def downloads_lte(self, n: int) -> SearchQuery:
-        return self.add_filter("downloads <= {}", int(n))
+        return self.filter("downloads <= {}", int(n))
 
     def public_domain(self) -> SearchQuery:
-        self._filter.append(("copyrighted = 0", {}))
+        self._filters.append(("copyrighted = 0", {}))
         return self
 
     def copyrighted(self) -> SearchQuery:
-        self._filter.append(("copyrighted = 1", {}))
+        self._filters.append(("copyrighted = 1", {}))
         return self
 
     def lang(self, code: Language | str) -> SearchQuery:
@@ -173,33 +186,33 @@ class SearchQuery:
             code_val = code.code
         else:
             code_val = code.lower()
-        return self.add_filter("lang_codes @> ARRAY[CAST({} AS text)]", code_val)
+        return self.filter("lang_codes @> ARRAY[CAST({} AS text)]", code_val)
 
     def text_only(self) -> SearchQuery:
-        self._filter.append(("is_audio = false", {}))
+        self._filters.append(("is_audio = false", {}))
         return self
 
     def audiobook(self) -> SearchQuery:
-        self._filter.append(("is_audio = true", {}))
+        self._filters.append(("is_audio = true", {}))
         return self
 
     def author_born_after(self, year: int) -> SearchQuery:
-        return self.add_filter("max_author_birthyear >= {}", int(year))
+        return self.filter("max_author_birthyear >= {}", int(year))
 
     def author_born_before(self, year: int) -> SearchQuery:
-        return self.add_filter("min_author_birthyear <= {}", int(year))
+        return self.filter("min_author_birthyear <= {}", int(year))
 
     def author_died_after(self, year: int) -> SearchQuery:
-        return self.add_filter("max_author_deathyear >= {}", int(year))
+        return self.filter("max_author_deathyear >= {}", int(year))
 
     def author_died_before(self, year: int) -> SearchQuery:
-        return self.add_filter("min_author_deathyear <= {}", int(year))
+        return self.filter("min_author_deathyear <= {}", int(year))
 
     def released_after(self, date: str) -> SearchQuery:
-        return self.add_filter("release_date >= CAST({} AS date)", str(date))
+        return self.filter("CAST(release_date AS date) >= CAST({} AS date)", str(date))
 
     def released_before(self, date: str) -> SearchQuery:
-        return self.add_filter("release_date <= CAST({} AS date)", str(date))
+        return self.filter("CAST(release_date AS date) <= CAST({} AS date)", str(date))
 
     def locc(self, code: LoCCMainClass | str) -> SearchQuery:
         if isinstance(code, LoCCMainClass):
@@ -207,14 +220,17 @@ class SearchQuery:
         else:
             code = str(code).upper()
 
-        return self.add_filter(
+        return self.filter(
             "EXISTS (SELECT 1 FROM mn_books_loccs mbl JOIN loccs lc ON lc.pk = mbl.fk_loccs WHERE mbl.fk_books = book_id AND lc.pk LIKE {})",
             f"{code}%",
         )
 
     def contributor_role(self, role: str) -> SearchQuery:
-        return self.add_filter(
-            "dc->'creators' @> CAST({} AS jsonb)", f'[{{"role":"{role}"}}]'
+        return self.filter(
+            "EXISTS (SELECT 1 FROM mn_books_authors mba "
+            "JOIN roles r ON mba.fk_roles = r.pk "
+            "WHERE mba.fk_books = book_id AND r.role = {})",
+            role,
         )
 
     def file_type(self, ft: FileType | str) -> SearchQuery:
@@ -222,23 +238,30 @@ class SearchQuery:
             ft_value = ft.value
         else:
             ft_value = str(ft)
-        return self.add_filter(
-            "dc->'format' @> CAST({} AS jsonb)", f'[{{"mediatype":"{ft_value}"}}]'
+        return self.filter(
+            "EXISTS (SELECT 1 FROM files f "
+            "JOIN filetypes ft ON f.fk_filetypes = ft.pk "
+            "WHERE f.fk_books = book_id "
+            "AND f.obsoleted = 0 AND f.diskstatus = 0 "
+            "AND ft.mediatype = {})",
+            ft_value,
         )
 
     def author_id(self, aid: int) -> SearchQuery:
-        return self.add_filter(
-            "dc->'creators' @> CAST({} AS jsonb)", f'[{{"id":{int(aid)}}}]'
+        return self.filter(
+            "EXISTS (SELECT 1 FROM mn_books_authors mba "
+            "WHERE mba.fk_books = book_id AND mba.fk_authors = {})",
+            int(aid),
         )
 
     def subject_id(self, sid: int) -> SearchQuery:
-        return self.add_filter(
+        return self.filter(
             "EXISTS (SELECT 1 FROM mn_books_subjects mbs WHERE mbs.fk_books = book_id AND mbs.fk_subjects = {})",
             int(sid),
         )
 
     def bookshelf_id(self, bid: int) -> SearchQuery:
-        return self.add_filter(
+        return self.filter(
             "EXISTS (SELECT 1 FROM mn_books_bookshelves mbb WHERE mbb.fk_books = book_id AND mbb.fk_bookshelves = {})",
             int(bid),
         )
@@ -248,8 +271,12 @@ class SearchQuery:
             enc_val = enc.value
         else:
             enc_val = str(enc)
-        return self.add_filter(
-            "dc->'format' @> CAST({} AS jsonb)", f'[{{"encoding":"{enc_val}"}}]'
+        return self.filter(
+            "EXISTS (SELECT 1 FROM files f "
+            "WHERE f.fk_books = book_id "
+            "AND f.obsoleted = 0 AND f.diskstatus = 0 "
+            "AND f.fk_encodings = {})",
+            enc_val,
         )
 
     def where(self, sql: str, **params) -> SearchQuery:
@@ -259,7 +286,7 @@ class SearchQuery:
                 raise ValueError(
                     "Parameter name reserved by search engine: starts with '__p'"
                 )
-        self._filter.append((sql, params))
+        self._filters.append((sql, params))
         return self
 
     # === SQL Building ===
@@ -268,7 +295,7 @@ class SearchQuery:
         params = {}
         for _, p, *_ in self._search:
             params.update(p)
-        for _, p in self._filter:
+        for _, p in self._filters:
             params.update(p)
         return params
 
@@ -300,7 +327,7 @@ class SearchQuery:
         limit, offset = self._page_size, (self._page - 1) * self._page_size
 
         search_sql = " AND ".join(s[0] for s in self._search) if self._search else None
-        filter_sql = " AND ".join(f[0] for f in self._filter) if self._filter else None
+        filter_sql = " AND ".join(f[0] for f in self._filters) if self._filters else None
 
         if search_sql and filter_sql:
             sql = f"SELECT {_SELECT} FROM (SELECT {_SUBQUERY} FROM mv_books_dc WHERE {search_sql}) t WHERE {filter_sql} ORDER BY {order} LIMIT {limit} OFFSET {offset}"
@@ -316,7 +343,7 @@ class SearchQuery:
     def build_count(self) -> tuple[str, dict]:
         params = self._params()
         search_sql = " AND ".join(s[0] for s in self._search) if self._search else None
-        filter_sql = " AND ".join(f[0] for f in self._filter) if self._filter else None
+        filter_sql = " AND ".join(f[0] for f in self._filters) if self._filters else None
 
         if search_sql and filter_sql:
             return (
@@ -463,7 +490,7 @@ class FullTextSearch:
         params = q._params()
         order_sql = q._order_sql(params)
         search_sql = " AND ".join(s[0] for s in q._search) if q._search else None
-        filter_sql = " AND ".join(f[0] for f in q._filter) if q._filter else None
+        filter_sql = " AND ".join(f[0] for f in q._filters) if q._filters else None
         where_parts = [p for p in (search_sql, filter_sql) if p]
         where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 

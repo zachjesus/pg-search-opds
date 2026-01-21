@@ -2,20 +2,18 @@
 
 BEGIN;
 
--- Reasonable memory settings for MV build (adjust based on available RAM)
--- work_mem: per-operation memory (sorts, hashes) - don't go too high
--- maintenance_work_mem: for CREATE INDEX, VACUUM, etc.
 SET LOCAL work_mem = '256MB';
 SET LOCAL maintenance_work_mem = '1GB';
 SET LOCAL max_parallel_workers_per_gather = 4;
-SET LOCAL effective_io_concurrency = 200;  -- SSD optimization
 
 SET LOCAL client_min_messages = WARNING;
 
+-- check if there is an equivalent already in PG we need to find and use it
 CREATE OR REPLACE FUNCTION text_to_date_immutable(text) RETURNS date AS $$
     SELECT $1::date;
 $$ LANGUAGE SQL IMMUTABLE STRICT;
 
+-- check ifthere is an equivalent already in PG we need to find and use it
 DO $$
 BEGIN
     CREATE AGGREGATE tsvector_agg(tsvector) (
@@ -56,6 +54,7 @@ SELECT
 
     -- Combined searchable text: title + all authors + all subjects + all bookshelves
     -- (attributes excluded to reduce size for fuzzy search)
+    -- LETS USE PROJECT GUTENBERG PREXISTING FOR THIS
     CONCAT_WS(' ',
         b.title,
         (SELECT STRING_AGG(au.author, ' ')
@@ -193,241 +192,154 @@ SELECT
         LIMIT 1
     ), '')) AS subtitle_tsvec,
 
-    -- Everything else in JSONB
-    jsonb_build_object(
-        'identifier', b.pk,
-        'title', b.title,
-        'titleData', (
-            SELECT jsonb_build_object(
-                'full', a.text,
-                'title', CASE
-                    WHEN a.text LIKE '%$b%' THEN RTRIM(SPLIT_PART(a.text, '$b', 1), ' :')
-                    ELSE a.text
-                END,
-                'subtitle', CASE
-                    WHEN a.text LIKE '%$b%' THEN TRIM(SPLIT_PART(a.text, '$b', 2))
-                    ELSE NULL
-                END,
-                'nonfiling', a.nonfiling
-            )
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 245
-            LIMIT 1
-        ),
-        'alternative', (
-            SELECT jsonb_agg(a.text ORDER BY a.pk)
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 246
-        ),
-        'altTitle', (
-            SELECT a.text
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 206
-            LIMIT 1
-        ),
-        'creators', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object(
-                    'id', au.pk,
-                    'name', au.author,
-                    'role', r.role,
-                    'marcrel', r.pk,
-                    'birthdate', au.born_floor,
-                    'birthdate_ceil', au.born_ceil,
-                    'deathdate', au.died_floor,
-                    'deathdate_ceil', au.died_ceil,
-                    'heading', mba.heading,
-                    'aliases', COALESCE((
-                        SELECT jsonb_agg(al.alias)
-                        FROM aliases al
-                        WHERE al.fk_authors = au.pk
-                    ), '[]'::jsonb),
-                    'webpages', COALESCE((
-                        SELECT jsonb_agg(jsonb_build_object('url', aw.url, 'description', aw.description))
-                        FROM author_urls aw
-                        WHERE aw.fk_authors = au.pk
-                    ), '[]'::jsonb)
-                ) ORDER BY mba.heading, r.role, au.author
-            )
-            FROM mn_books_authors mba
-            JOIN authors au ON mba.fk_authors = au.pk
-            JOIN roles r ON mba.fk_roles = r.pk
-            WHERE mba.fk_books = b.pk
-        ), '[]'::jsonb),
-        'subjects', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object('id', s.pk, 'subject', s.subject)
-                ORDER BY s.subject
-            )
-            FROM mn_books_subjects mbs
-            JOIN subjects s ON mbs.fk_subjects = s.pk
-            WHERE mbs.fk_books = b.pk
-        ), '[]'::jsonb),
-        'summary', (
-            SELECT jsonb_agg(a.text ORDER BY a.pk)
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 520
-        ),
-        'publisher', (
-            SELECT jsonb_build_object(
-                'raw', a.text,
-                'place', CASE
-                    WHEN a.text LIKE '%$a%' THEN TRIM(BOTH ' :,.;[]' FROM SPLIT_PART(SPLIT_PART(a.text, '$a', 2), '$', 1))
-                    ELSE NULL
-                END,
-                'publisher', CASE
-                    WHEN a.text LIKE '%$b%' THEN TRIM(BOTH ' :,.;[]' FROM SPLIT_PART(SPLIT_PART(a.text, '$b', 2), '$', 1))
-                    ELSE NULL
-                END,
-                'years', CASE
-                    WHEN a.text LIKE '%$c%' THEN TRIM(SPLIT_PART(SPLIT_PART(a.text, '$c', 2), '$', 1))
-                    ELSE NULL
-                END
-            )
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist IN (260, 264)
-            ORDER BY a.fk_attriblist
-            LIMIT 1
-        ),
-        'date', b.release_date,
-        'type', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object('id', d.pk, 'dcmitype', d.dcmitype, 'description', d.description)
-            )
-            FROM mn_books_categories mbc
-            JOIN dcmitypes d ON mbc.fk_categories = d.pk
-            WHERE mbc.fk_books = b.pk
-        ), '[{"id": 1, "dcmitype": "Text", "description": "Text"}]'::jsonb),
-        'format', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object(
-                    'id', f.pk,
-                    'filename', f.filename,
-                    'filetype', f.fk_filetypes,
-                    'hr_filetype', ft.filetype,
-                    'mediatype', ft.mediatype,
-                    'encoding', f.fk_encodings,
-                    'compression', f.fk_compressions,
-                    'extent', f.filesize,
-                    'modified', f.filemtime,
-                    'generated', ft.generated
-                ) ORDER BY ft.sortorder, f.fk_filetypes
-            )
-            FROM files f
-            LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
-            WHERE f.fk_books = b.pk
-              AND f.obsoleted = 0
-              AND f.diskstatus = 0
-        ), '[]'::jsonb),
-        'language', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object('code', l.pk, 'name', l.lang)
-            )
-            FROM mn_books_langs mbl
-            JOIN langs l ON mbl.fk_langs = l.pk
-            WHERE mbl.fk_books = b.pk
-        ), '[{"code": "en", "name": "English"}]'::jsonb),
-        'source', (
-            SELECT jsonb_agg(a.text ORDER BY a.pk)
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 534
-        ),
-        'relation', (
-            SELECT jsonb_agg(a.text ORDER BY a.pk)
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 787
-        ),
-        'coverage', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object('id', lc.pk, 'locc', lc.locc)
-            )
-            FROM mn_books_loccs mblc
-            JOIN loccs lc ON mblc.fk_loccs = lc.pk
-            WHERE mblc.fk_books = b.pk
-        ), '[]'::jsonb),
-        'rights', CASE
-            WHEN b.copyrighted = 1 THEN 'Copyrighted. Read the copyright notice inside this book for details.'
-            ELSE 'Public domain in the USA.'
-        END,
-        'bookshelves', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object('id', bs.pk, 'bookshelf', bs.bookshelf)
-                ORDER BY bs.bookshelf
-            )
-            FROM mn_books_bookshelves mbbs
-            JOIN bookshelves bs ON mbbs.fk_bookshelves = bs.pk
-            WHERE mbbs.fk_books = b.pk
-        ), '[]'::jsonb),
-        'credits', (
-            SELECT jsonb_agg(
-                TRIM(
-                    CASE
-                        WHEN a.text ~* '\s*updated?:\s*'
-                        THEN (regexp_split_to_array(a.text, '\s*[Uu][Pp][Dd][Aa][Tt][Ee][Dd]?:\s*'))[1]
-                        ELSE a.text
-                    END
-                )
-                ORDER BY a.pk
-            )
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 508
-        ),
-        'coverpage', (
-            SELECT jsonb_agg(a.text ORDER BY a.pk)
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 901
-        ),
-        'downloads', b.downloads,
-        'scanUrls', (
-            SELECT a.text
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 904
-            LIMIT 1
-        ),
-        'requestKey', (
-            SELECT a.text
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 905
-            LIMIT 1
-        ),
-        'pubInfo906', (
-            SELECT jsonb_build_object(
-                'raw', a.text,
-                'firstYear', CASE
-                    WHEN a.text NOT LIKE '%$b%' THEN a.text
-                    ELSE SPLIT_PART(a.text, '$b', 1)
-                END,
-                'publisher', CASE
-                    WHEN a.text LIKE '%$b%' THEN SPLIT_PART(SPLIT_PART(a.text, '$b', 2), ',', 1)
-                    ELSE NULL
-                END
-            )
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 906
-            LIMIT 1
-        ),
-        'pubCountry', (
-            SELECT a.text
-            FROM attributes a
-            WHERE a.fk_books = b.pk AND a.fk_attriblist = 907
-            LIMIT 1
-        ),
-        'marc', COALESCE((
-            SELECT jsonb_agg(
-                jsonb_build_object(
-                    'code', al.pk,
-                    'name', al.name,
-                    'caption', al.caption,
-                    'text', a.text,
-                    'nonfiling', a.nonfiling
-                ) ORDER BY al.pk, a.pk
-            )
-            FROM attributes a
-            JOIN attriblist al ON a.fk_attriblist = al.pk
-            WHERE a.fk_books = b.pk
-        ), '[]'::jsonb)
+    -- Creators (ordered for stable output)
+    (
+        SELECT ARRAY_AGG(au.pk ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_ids,
+    (
+        SELECT ARRAY_AGG(au.author ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_names,
+    (
+        SELECT ARRAY_AGG(r.role ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_roles,
 
-    ) AS dc
+    -- Subjects (ordered alphabetically)
+    (
+        SELECT ARRAY_AGG(s.pk ORDER BY s.subject)
+        FROM mn_books_subjects mbs
+        JOIN subjects s ON mbs.fk_subjects = s.pk
+        WHERE mbs.fk_books = b.pk
+    ) AS subject_ids,
+    (
+        SELECT ARRAY_AGG(s.subject ORDER BY s.subject)
+        FROM mn_books_subjects mbs
+        JOIN subjects s ON mbs.fk_subjects = s.pk
+        WHERE mbs.fk_books = b.pk
+    ) AS subject_names,
+
+    -- Bookshelves (ordered alphabetically)
+    (
+        SELECT ARRAY_AGG(bs.pk ORDER BY bs.bookshelf)
+        FROM mn_books_bookshelves mbbs
+        JOIN bookshelves bs ON mbbs.fk_bookshelves = bs.pk
+        WHERE mbbs.fk_books = b.pk
+    ) AS bookshelf_ids,
+    (
+        SELECT ARRAY_AGG(bs.bookshelf ORDER BY bs.bookshelf)
+        FROM mn_books_bookshelves mbbs
+        JOIN bookshelves bs ON mbbs.fk_bookshelves = bs.pk
+        WHERE mbbs.fk_books = b.pk
+    ) AS bookshelf_names,
+
+    -- DCMI types (default to Text)
+    COALESCE((
+        SELECT ARRAY_AGG(d.dcmitype ORDER BY d.dcmitype)
+        FROM mn_books_categories mbc
+        JOIN dcmitypes d ON mbc.fk_categories = d.pk
+        WHERE mbc.fk_books = b.pk
+    ), ARRAY['Text']::text[]) AS dcmitypes,
+
+    -- Publisher (raw)
+    (
+        SELECT a.text
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist IN (260, 264)
+        ORDER BY a.fk_attriblist
+        LIMIT 1
+    ) AS publisher,
+
+    -- Summary (MARC 520)
+    (
+        SELECT ARRAY_AGG(a.text ORDER BY a.pk)
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist = 520
+    ) AS summary,
+
+    -- Credits (MARC 508) with "Updated:" stripped
+    (
+        SELECT ARRAY_AGG(
+            TRIM(
+                CASE
+                    WHEN a.text ~* '\s*updated?:\s*'
+                    THEN (regexp_split_to_array(a.text, '\s*[Uu][Pp][Dd][Aa][Tt][Ee][Dd]?:\s*'))[1]
+                    ELSE a.text
+                END
+            )
+            ORDER BY a.pk
+        )
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist = 508
+    ) AS credits,
+
+    -- Reading level (MARC 908)
+    (
+        SELECT a.text
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist = 908
+        ORDER BY a.pk
+        LIMIT 1
+    ) AS reading_level,
+
+    -- Cover pages (MARC 901)
+    (
+        SELECT ARRAY_AGG(a.text ORDER BY a.pk)
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist = 901
+    ) AS coverpage,
+
+    -- Formats (files, ordered by filetype sort order)
+    (
+        SELECT ARRAY_AGG(f.filename ORDER BY ft.sortorder, f.fk_filetypes)
+        FROM files f
+        LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
+        WHERE f.fk_books = b.pk
+          AND f.obsoleted = 0
+          AND f.diskstatus = 0
+    ) AS format_filenames,
+    (
+        SELECT ARRAY_AGG(f.fk_filetypes ORDER BY ft.sortorder, f.fk_filetypes)
+        FROM files f
+        LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
+        WHERE f.fk_books = b.pk
+          AND f.obsoleted = 0
+          AND f.diskstatus = 0
+    ) AS format_filetypes,
+    (
+        SELECT ARRAY_AGG(ft.filetype ORDER BY ft.sortorder, f.fk_filetypes)
+        FROM files f
+        LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
+        WHERE f.fk_books = b.pk
+          AND f.obsoleted = 0
+          AND f.diskstatus = 0
+    ) AS format_hr_filetypes,
+    (
+        SELECT ARRAY_AGG(ft.mediatype ORDER BY ft.sortorder, f.fk_filetypes)
+        FROM files f
+        LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
+        WHERE f.fk_books = b.pk
+          AND f.obsoleted = 0
+          AND f.diskstatus = 0
+    ) AS format_mediatypes,
+    (
+        SELECT ARRAY_AGG(f.filesize ORDER BY ft.sortorder, f.fk_filetypes)
+        FROM files f
+        LEFT JOIN filetypes ft ON f.fk_filetypes = ft.pk
+        WHERE f.fk_books = b.pk
+          AND f.obsoleted = 0
+          AND f.diskstatus = 0
+    ) AS format_extents
 FROM books b;
 
 -- ============================================================================
@@ -460,7 +372,7 @@ CREATE INDEX idx_mv_gin_locc ON mv_books_dc USING GIN (locc_codes);
 -- ============================================================================
 CREATE INDEX idx_mv_fts_book ON mv_books_dc USING GIN (tsvec);
 CREATE INDEX idx_mv_fts_title ON mv_books_dc USING GIN (title_tsvec);
-CREATE INDEX idx_mv_fts_subtitle ON mv_books_dc USING GIN (subtitle_tsvec);
+CREATE INDEX idx_mv_fts_subtitle ON mv_books_dc USING GIN (subtitle_tsvec); 
 CREATE INDEX idx_mv_fts_author ON mv_books_dc USING GIN (author_tsvec);
 CREATE INDEX idx_mv_fts_subject ON mv_books_dc USING GIN (subject_tsvec);
 CREATE INDEX idx_mv_fts_bookshelf ON mv_books_dc USING GIN (bookshelf_tsvec);
@@ -485,13 +397,6 @@ CREATE INDEX idx_mv_fuzzy_author ON mv_books_dc USING GIST (all_authors gist_trg
 CREATE INDEX idx_mv_fuzzy_subject ON mv_books_dc USING GIST (all_subjects gist_trgm_ops);
 CREATE INDEX idx_mv_fuzzy_book ON mv_books_dc USING GIST (book_text gist_trgm_ops);
 CREATE INDEX idx_mv_fuzzy_bookshelf ON mv_books_dc USING GIST (bookshelf_text gist_trgm_ops);
-
--- ============================================================================
--- GIN: JSONB containment (@>) - ID lookups only
--- ============================================================================
-CREATE INDEX idx_mv_jsonb_creators ON mv_books_dc USING GIN ((dc->'creators') jsonb_path_ops);
-CREATE INDEX idx_mv_jsonb_subjects ON mv_books_dc USING GIN ((dc->'subjects') jsonb_path_ops);
-CREATE INDEX idx_mv_jsonb_bookshelves ON mv_books_dc USING GIN ((dc->'bookshelves') jsonb_path_ops);
 
 ANALYZE mv_books_dc;
 

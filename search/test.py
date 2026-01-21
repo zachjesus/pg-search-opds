@@ -190,10 +190,11 @@ print("Custom SQL")
 print("-" * 130)
 test(
     "where() - multi-author",
-    s.query().where("jsonb_array_length(dc->'creators') > :n", n=2)[1, 10],
+    s.query().where("COALESCE(array_length(creator_ids, 1), 0) > :n", n=2)[1, 10],
 )
 test(
-    "where() - has description", s.query().where("dc->'description' IS NOT NULL")[1, 10]
+    "where() - has credits",
+    s.query().where("COALESCE(array_length(credits, 1), 0) > 0")[1, 10],
 )
 
 # === Ordering ===
@@ -241,8 +242,15 @@ print("-" * 130)
 print("Crosswalk Formats")
 print("-" * 130)
 
-test("Crosswalk.FULL", s.query(Crosswalk.FULL).search("Shakespeare")[1, 5])
+start = time.perf_counter()
+data = s.execute(s.query(Crosswalk.FULL).search("Shakespeare")[1, 5])
+ms = (time.perf_counter() - start) * 1000
+first = data["results"][0] if data["results"] else {}
+print(
+    f"{'Crosswalk.FULL':<50} | {data['total']:>6} | {ms:>7.1f}ms | keys: {list(first.keys())}"
+)
 
+test("Crosswalk.FULL", s.query(Crosswalk.FULL).search("Shakespeare")[1, 5])
 start = time.perf_counter()
 data = s.execute(s.query(Crosswalk.MINI).search("Shakespeare")[1, 5])
 ms = (time.perf_counter() - start) * 1000

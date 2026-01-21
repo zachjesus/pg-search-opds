@@ -63,7 +63,24 @@ Denormalized view containing all book metadata for fast searching.
 | copyrighted | int | 0 = public domain, 1 = copyrighted |
 | is_audio | bool | True if audiobook |
 | locc_codes | text[] | Library of Congress classification codes |
-| dc | jsonb | Full Dublin Core metadata |
+| creator_ids | int[] | Creator IDs aligned to creator_names/roles |
+| creator_names | text[] | Creator names aligned to creator_ids/roles |
+| creator_roles | text[] | Creator roles aligned to creator_ids/names |
+| subject_ids | int[] | Subject IDs aligned to subject_names |
+| subject_names | text[] | Subject names aligned to subject_ids |
+| bookshelf_ids | int[] | Bookshelf IDs aligned to bookshelf_names |
+| bookshelf_names | text[] | Bookshelf names aligned to bookshelf_ids |
+| dcmitypes | text[] | DCMI type labels (defaults to Text) |
+| publisher | text | Publisher raw string |
+| summary | text[] | MARC 520 summary entries |
+| credits | text[] | MARC 508 credits entries |
+| reading_level | text | MARC 908 reading level |
+| coverpage | text[] | MARC 901 cover URLs |
+| format_filenames | text[] | File URLs aligned to format_* arrays |
+| format_filetypes | text[] | Filetype codes aligned to format_* arrays |
+| format_hr_filetypes | text[] | Human-readable filetype labels |
+| format_mediatypes | text[] | Media types aligned to format_* arrays |
+| format_extents | bigint[] | File sizes aligned to format_* arrays |
 
 ### Indexes
 
@@ -74,7 +91,6 @@ Denormalized view containing all book metadata for fast searching.
 | GIN trigram | title, all_authors, book_text, etc. | Substring search (ILIKE) |
 | GiST trigram | title, all_authors, book_text, etc. | Fuzzy/typo-tolerant search |
 | GIN array | lang_codes, locc_codes | Array containment |
-| GIN jsonb | dc->'creators', dc->'subjects', dc->'bookshelves' | JSONB containment |
 
 ### Refresh
 
@@ -223,7 +239,7 @@ q.bookshelf_id(68)               # Uses mn_books_bookshelves
 q.contributor_role("Illustrator")
 
 # Custom SQL
-q.where("jsonb_array_length(dc->'creators') > :n", n=2)
+q.where("COALESCE(array_length(creator_ids, 1), 0) > :n", n=2)
 ```
 
 ### Chaining
@@ -271,7 +287,7 @@ q[2]       # Page 2, default 28 per page
 ```python
 from FullTextSearch import Crosswalk
 
-fts.query(Crosswalk.FULL)   # All columns: book_id, title, author, downloads, dc
+fts.query(Crosswalk.FULL)   # Full: book_id, title, author, downloads, dc (computed)
 fts.query(Crosswalk.MINI)   # Minimal: id, title, author, downloads
 fts.query(Crosswalk.PG)     # Project Gutenberg API format
 fts.query(Crosswalk.OPDS)   # OPDS 2.0 publication format
