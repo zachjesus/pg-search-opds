@@ -22,10 +22,10 @@ _VALID_SORTS = set(OrderBy._value2member_map_.keys())
 
 
 def _parse_search_type(field: str) -> SearchType:
-    """Parse field param to SearchType. Field name is ignored."""
-    if field.startswith("fts_") or field == "fts":
+    """Parse field param to SearchType."""
+    if field.startswith("fts"):
         return SearchType.FTS
-    if field.startswith("fuzzy_") or field == "fuzzy":
+    if field.startswith("fuzzy"):
         return SearchType.FUZZY
     return SearchType.FUZZY
 
