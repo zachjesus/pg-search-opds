@@ -24,10 +24,7 @@ def test(name: str, q):
         first = data["results"][0] if data["results"] else None
         if first:
             title = first.get("title", first.get("name", "N/A"))[:40]
-            author = (
-                first.get("author", first.get("all_authors", "Unknown")) or "Unknown"
-            )
-            author = author[:25]
+            author = (first.get("author") or "Unknown")[:25]
         else:
             title, author = "N/A", "N/A"
         print(f"{name:<50} | {count:>6} | {ms:>7.1f}ms | {title} - {author}")
@@ -246,9 +243,10 @@ print("-" * 130)
 
 
 def my_transformer(row):
+    author = " | ".join(row.creator_names) if row.creator_names else "Unknown"
     return {
         "id": row.book_id,
-        "name": f"{row.title} by {row.all_authors or 'Unknown'}",
+        "name": f"{row.title} by {author}",
         "popularity": row.downloads,
     }
 

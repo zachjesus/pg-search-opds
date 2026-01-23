@@ -48,7 +48,6 @@ Denormalized view containing all book metadata for fast searching.
 |--------|------|-------------|
 | book_id | int | Primary key |
 | title | text | Book title |
-| all_authors | text | Pipe-delimited author names |
 | downloads | int | Download count (last 30 days) |
 | release_date | date | Publication date (denormalized for fast sorting) |
 | lang_codes | text[] | Array of language codes |

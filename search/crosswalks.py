@@ -94,7 +94,7 @@ def crosswalk_full(row) -> dict[str, Any]:
     return {
         "book_id": row.book_id,
         "title": row.title,
-        "author": row.all_authors,
+        "author": " | ".join(row.creator_names) if row.creator_names else None,
         "downloads": row.downloads,
         "creators": creators,
         "language": language,
@@ -117,7 +117,7 @@ def crosswalk_mini(row) -> dict[str, Any]:
     return {
         "id": row.book_id,
         "title": row.title,
-        "author": row.all_authors,
+        "author": " | ".join(row.creator_names) if row.creator_names else None,
         "downloads": row.downloads,
     }
 

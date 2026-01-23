@@ -32,19 +32,19 @@ _FIELD_COLS = {
 _ORDER_COLUMNS = {
     OrderBy.DOWNLOADS: ("downloads", SortDirection.DESC, None),
     OrderBy.TITLE: ("title", SortDirection.ASC, None),
-    OrderBy.AUTHOR: ("all_authors", SortDirection.ASC, "LAST"),
+    OrderBy.AUTHOR: ("creator_names[1]", SortDirection.ASC, "LAST"),
     OrderBy.RELEASE_DATE: ("CAST(release_date AS date)", SortDirection.DESC, "LAST"),
     OrderBy.RANDOM: ("RANDOM()", None, None),
 }
 _SELECT = (
-    "book_id, title, all_authors, downloads, CAST(release_date AS text) AS release_date, copyrighted, lang_codes, "
+    "book_id, title, downloads, CAST(release_date AS text) AS release_date, copyrighted, lang_codes, "
     "creator_ids, creator_names, creator_roles, "
     "subject_ids, subject_names, bookshelf_ids, bookshelf_names, "
     "locc_codes, is_audio, dcmitypes, publisher, summary, credits, "
     "reading_level, coverpage, format_filenames, format_filetypes, "
     "format_hr_filetypes, format_mediatypes, format_extents"
 )
-_SUBQUERY = """book_id, title, all_authors, downloads, CAST(release_date AS text) AS release_date,
+_SUBQUERY = """book_id, title, downloads, CAST(release_date AS text) AS release_date,
     copyrighted, lang_codes, is_audio,
     creator_ids, creator_names, creator_roles,
     subject_ids, subject_names, bookshelf_ids, bookshelf_names,

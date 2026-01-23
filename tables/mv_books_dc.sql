@@ -1,4 +1,7 @@
--- Aligned with libgutenberg DublinCoreMapping.py
+-- Author: Zachary Rosario (github.com/zachjesus)
+-- Based on libgutenberg DublinCoreMapping.py
+-- Precomputes joins into cache for faster search results and filter operations.
+-- This materialized view is intended to be refreshed periodically.
 
 BEGIN;
 
@@ -8,20 +11,13 @@ DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
 
 CREATE MATERIALIZED VIEW mv_books_dc AS
 SELECT
+    -- From books table
     b.pk AS book_id,
     b.title,
     b.tsvec,
     b.downloads,
     b.release_date,
     b.copyrighted,
-
-    -- All authors sorted by heading then name (pipe-delimited for display)
-    (
-        SELECT STRING_AGG(au.author, ' | ' ORDER BY mba.heading, au.author)
-        FROM mn_books_authors mba
-        JOIN authors au ON mba.fk_authors = au.pk
-        WHERE mba.fk_books = b.pk
-    ) AS all_authors,
 
     -- Combined searchable text for books (title, authors, subjects, bookshelves)
     -- Used for the fuzzy search
@@ -240,9 +236,7 @@ SELECT
     ) AS format_extents
 FROM books b;
 
--- ============================================================================
 -- INDEXES
--- ============================================================================
 CREATE UNIQUE INDEX idx_mv_pk ON mv_books_dc (book_id);
 
 
@@ -261,9 +255,9 @@ CREATE INDEX idx_mv_fuzzy_book ON mv_books_dc USING GIST (book_text gist_trgm_op
 
 ANALYZE mv_books_dc;
 
--- ============================================================================
 -- Refresh Function (for use with systemd timer or cron)
--- ============================================================================
+-- SELECT refresh_mv_books_dc();
+-- psql -U postgres -d your_database -c "SELECT refresh_mv_books_dc();"
 
 CREATE OR REPLACE FUNCTION refresh_mv_books_dc()
 RETURNS void
@@ -274,9 +268,6 @@ BEGIN
     ANALYZE mv_books_dc;
 END;
 $$;
-
--- To manually refresh: SELECT refresh_mv_books_dc();
--- For systemd timer, use: psql -U postgres -d your_database -c "SELECT refresh_mv_books_dc();"
 
 COMMIT;
 
