@@ -129,12 +129,12 @@ count = fts.count(fts.query().search("Shakespeare"))
 **FTS (Full-Text Search)**:
 - Uses PostgreSQL `websearch_to_tsquery` 
 - Supports boolean operators (see below)
-- Default sort: **Relevance** 
+- Default sort: **Downloads** 
 - Best for: Precise searches, exact word matching, speed
 
 **Fuzzy Search**:
 - Uses trigram similarity for typo tolerance
-- Default sort: **Relevance** 
+- Default sort: **Downloads** 
 - Best for: User input with potential misspellings
 
 ```python
