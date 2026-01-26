@@ -7,6 +7,15 @@ BEGIN;
 
 SET LOCAL client_min_messages = WARNING;
 
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+EXCEPTION 
+    WHEN duplicate_function THEN
+        CREATE EXTENSION pg_trgm FROM unpackaged;
+END $$;
+ALTER EXTENSION pg_trgm UPDATE;
+
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
 
 CREATE MATERIALIZED VIEW mv_books_dc AS
