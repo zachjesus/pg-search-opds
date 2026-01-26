@@ -542,9 +542,14 @@ if __name__ == "__main__":
     def cors():
         cherrypy.response.headers["Access-Control-Allow-Origin"] = "*"
         cherrypy.response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        cherrypy.response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        cherrypy.response.headers["Access-Control-Allow-Headers"] = "Content-Type, Accept"
+        cherrypy.response.headers["Access-Control-Max-Age"] = "86400"
+        if cherrypy.request.method == "OPTIONS":
+            cherrypy.response.status = 200
+            cherrypy.response.body = b""
+            cherrypy.request.handler = None
 
-    cherrypy.tree.mount(OPDSFeed(), "/opds", {"/": {"tools.cors.on": True}})
+    cherrypy.tree.mount(OPDSFeed(), "/opds", {"/": {"tools.cors.on": True, "request.methods_with_bodies": ("POST", "PUT", "PATCH")}})
     try:
         cherrypy.engine.start()
         cherrypy.engine.block()
