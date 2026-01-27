@@ -13,7 +13,7 @@ BEGIN
 EXCEPTION 
     WHEN duplicate_function THEN
         BEGIN
-            CREATE EXTENSION pg_trgm FROM unpackaged;
+            EXECUTE 'CREATE EXTENSION pg_trgm FROM unpackaged';
         EXCEPTION WHEN OTHERS THEN
             NULL;
         END;
