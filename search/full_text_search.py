@@ -18,7 +18,6 @@ from .constants import (
     SortDirection,
 )
 from .crosswalks import CROSSWALK_MAP
-from .helpers import get_locc_children
 
 __all__ = [
     "Config",
@@ -39,6 +38,7 @@ _ORDER_COLUMNS = {
 _SELECT = (
     "book_id, title, downloads, CAST(release_date AS text) AS release_date, copyrighted, lang_codes, "
     "creator_ids, creator_names, creator_roles, "
+    "creator_born_floor, creator_born_ceil, creator_died_floor, creator_died_ceil, "
     "subject_ids, subject_names, bookshelf_ids, bookshelf_names, "
     "locc_codes, is_audio, dcmitypes, publisher, summary, credits, "
     "reading_level, coverpage, format_filenames, format_filetypes, "
@@ -47,6 +47,7 @@ _SELECT = (
 _SUBQUERY = """book_id, title, downloads, CAST(release_date AS text) AS release_date,
     copyrighted, lang_codes, is_audio,
     creator_ids, creator_names, creator_roles,
+    creator_born_floor, creator_born_ceil, creator_died_floor, creator_died_ceil,
     subject_ids, subject_names, bookshelf_ids, bookshelf_names,
     dcmitypes, publisher, summary, credits, reading_level,
     coverpage, format_filenames, format_filetypes, format_hr_filetypes,
@@ -346,7 +347,7 @@ class FullTextSearch:
     def __init__(self, config: Config | None = None):
         cfg = config or Config()
         self.engine = create_engine(
-            f"postgresql://{cfg.PGUSER}@{cfg.PGHOST}:{cfg.PGPORT}/{cfg.PGDATABASE}",
+            f"postgresql://{cfg.PGUSER}@{cfg.PGHOST}:{cfg.PGPORT}/{cfg.PGDATABASE}", # GutenbergDatabase.get_sqlalchemy_url()
             pool_pre_ping=True,
             pool_recycle=300,
         )
@@ -357,7 +358,7 @@ class FullTextSearch:
         """Set custom transformer for Crosswalk.CUSTOM."""
         self._custom_transformer = fn
 
-    def query(self, crosswalk: Crosswalk = Crosswalk.FULL) -> SearchQuery:
+    def query(self, crosswalk: Crosswalk = Crosswalk.PG) -> SearchQuery:
         """Create a new query builder."""
         q = SearchQuery()
         q._crosswalk = crosswalk
@@ -499,5 +500,32 @@ class FullTextSearch:
             return [{"id": r.id, "name": r.name, "count": r.count} for r in rows]
 
     def get_locc_children(self, parent: LoCCMainClass | str) -> list[dict]:
+        """Get LoCC children for a parent code."""
+        if isinstance(parent, LoCCMainClass):
+            parent_code = parent.code
+        else:
+            parent_code = (parent or "").strip().upper()
+
+        if not parent_code:
+            sorted_classes = sorted(LoCCMainClass, key=lambda x: x.code)
+            return [
+                {"code": item.code, "label": item.label, "has_children": True}
+                for item in sorted_classes
+            ]
+
+        sql = text("""
+            SELECT lc.pk AS code, lc.locc AS label,
+                EXISTS (
+                    SELECT 1 FROM loccs lc2 WHERE lc2.pk LIKE lc.pk || '%' AND lc2.pk != lc.pk
+                ) AS has_children
+            FROM loccs lc
+            WHERE lc.pk LIKE :pattern AND lc.pk != :parent
+            ORDER BY char_length(lc.pk), lc.pk
+        """)
+
         with self.Session() as session:
-            return get_locc_children(parent, session)
+            rows = session.execute(sql, {"pattern": f"{parent_code}%", "parent": parent_code}).mappings().all()
+            return [
+                {"code": r["code"], "label": r["label"], "has_children": bool(r["has_children"])}
+                for r in rows
+            ]

@@ -17,12 +17,18 @@ END $$;
 ALTER EXTENSION pg_trgm UPDATE;
 
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
-
 CREATE MATERIALIZED VIEW mv_books_dc AS
 SELECT
     -- From books table
     b.pk AS book_id,
     b.title,
+    -- Subtitle (raw MARC 245)
+    (
+        SELECT a.text
+        FROM attributes a
+        WHERE a.fk_books = b.pk AND a.fk_attriblist = 245
+        LIMIT 1
+    ) AS subtitle,
     b.tsvec,
     b.downloads,
     b.release_date,
@@ -117,6 +123,34 @@ SELECT
         JOIN roles r ON mba.fk_roles = r.pk
         WHERE mba.fk_books = b.pk
     ) AS creator_roles,
+    (
+        SELECT ARRAY_AGG(au.born_floor ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_born_floor,
+    (
+        SELECT ARRAY_AGG(au.born_ceil ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_born_ceil,
+    (
+        SELECT ARRAY_AGG(au.died_floor ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_died_floor,
+    (
+        SELECT ARRAY_AGG(au.died_ceil ORDER BY mba.heading, r.role, au.author)
+        FROM mn_books_authors mba
+        JOIN authors au ON mba.fk_authors = au.pk
+        JOIN roles r ON mba.fk_roles = r.pk
+        WHERE mba.fk_books = b.pk
+    ) AS creator_died_ceil,
 
     -- Subjects (ordered alphabetically)
     (
@@ -154,7 +188,7 @@ SELECT
         WHERE mbc.fk_books = b.pk
     ), ARRAY['Text']::text[]) AS dcmitypes,
 
-    -- Publisher (raw)
+    -- Publisher (MARC 260 or 264)
     (
         SELECT a.text
         FROM attributes a
@@ -170,18 +204,9 @@ SELECT
         WHERE a.fk_books = b.pk AND a.fk_attriblist = 520
     ) AS summary,
 
-    -- Credits (MARC 508) with "Updated:" stripped
+    -- Credits (MARC 508)
     (
-        SELECT ARRAY_AGG(
-            TRIM(
-                CASE
-                    WHEN a.text ~* '\s*updated?:\s*'
-                    THEN (regexp_split_to_array(a.text, '\s*[Uu][Pp][Dd][Aa][Tt][Ee][Dd]?:\s*'))[1]
-                    ELSE a.text
-                END
-            )
-            ORDER BY a.pk
-        )
+        SELECT ARRAY_AGG(a.text ORDER BY a.pk)
         FROM attributes a
         WHERE a.fk_books = b.pk AND a.fk_attriblist = 508
     ) AS credits,

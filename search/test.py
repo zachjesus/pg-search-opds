@@ -183,23 +183,6 @@ print("Crosswalk Formats")
 print("-" * 130)
 
 start = time.perf_counter()
-data = s.execute(s.query(Crosswalk.FULL).search("Shakespeare")[1, 5])
-ms = (time.perf_counter() - start) * 1000
-first = data["results"][0] if data["results"] else {}
-print(
-    f"{'Crosswalk.FULL':<50} | {data['total']:>6} | {ms:>7.1f}ms | keys: {list(first.keys())}"
-)
-
-test("Crosswalk.FULL", s.query(Crosswalk.FULL).search("Shakespeare")[1, 5])
-start = time.perf_counter()
-data = s.execute(s.query(Crosswalk.MINI).search("Shakespeare")[1, 5])
-ms = (time.perf_counter() - start) * 1000
-first = data["results"][0] if data["results"] else {}
-print(
-    f"{'Crosswalk.MINI':<50} | {data['total']:>6} | {ms:>7.1f}ms | keys: {list(first.keys())}"
-)
-
-start = time.perf_counter()
 data = s.execute(s.query(Crosswalk.PG).search("Shakespeare")[1, 5])
 ms = (time.perf_counter() - start) * 1000
 first = data["results"][0] if data["results"] else {}
@@ -210,6 +193,21 @@ if first:
     print(
         f"  -> ebook_no: {first.get('ebook_no')}, files: {len(first.get('files', []))}, contributors: {len(first.get('contributors', []))}"
     )
+    if first.get('contributors'):
+        c = first['contributors'][0]
+        print(
+            f"  -> first contributor: {c.get('name')}, born: {c.get('born_floor')}-{c.get('born_ceil')}, died: {c.get('died_floor')}-{c.get('died_ceil')}"
+        )
+    # Test ContributorFormat: fmt() = main author, fmt(all=True) = all authors
+    fmt = first.get('format')
+    if fmt:
+        print(f"  -> fmt():                                     {fmt()}")
+        print(f"  -> fmt(pretty=True):                          {fmt(pretty=True)}")
+        print(f"  -> fmt(pretty=True, dates=False):             {fmt(pretty=True, dates=False)}")
+        print(f"  -> fmt(all=True):                             {fmt(all=True)}")
+        print(f"  -> fmt(all=True, pretty=True):                {fmt(all=True, pretty=True)}")
+        print(f"  -> fmt(all=True, strunk_join=True):           {fmt(all=True, strunk_join=True)}")
+        print(f"  -> fmt(all=True, strunk_join=True, pretty=True): {fmt(all=True, strunk_join=True, pretty=True)}")
 
 start = time.perf_counter()
 data = s.execute(s.query(Crosswalk.OPDS).search("Shakespeare")[1, 5])

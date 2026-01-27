@@ -258,9 +258,7 @@ q[2]       # Page 2, default 28 per page
 ```python
 from FullTextSearch import Crosswalk
 
-fts.query(Crosswalk.FULL)   # Full: book_id, title, author, downloads, dc (computed)
-fts.query(Crosswalk.MINI)   # Minimal: id, title, author, downloads
-fts.query(Crosswalk.PG)     # Project Gutenberg API format
+fts.query(Crosswalk.PG)     # Project Gutenberg API format (default)
 fts.query(Crosswalk.OPDS)   # OPDS 2.0 publication format
 fts.query(Crosswalk.CUSTOM) # Custom transformer (see below)
 ```

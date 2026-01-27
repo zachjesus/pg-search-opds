@@ -194,12 +194,13 @@ class OPDSFeed:
                 _link("search", "/opds/search{?query}", templated=True),
             ],
             "navigation": [
-                _nav("/opds/search?field=fuzzy", "I don't know how to spell what I'm looking for"),
+                _nav("/opds/search?field=fuzzy", "I'm not sure how to spell what I'm looking for"),
                 _nav("/opds/search?field=fts", "Advanced Search"),
                 _nav("/opds/bookshelves", "Browse Bookshelves"),
                 _nav("/opds/loccs", "Browse by Library of Congress Code"),
                 _nav("/opds/subjects", "Browse by Subject"),
                 {"href": "/opds/search?sort=downloads&sort_order=desc", "title": "Most Popular", "type": OPDS_TYPE, "rel": "http://opds-spec.org/sort/popular"},
+                _nav("/opds/search?audiobook=true&sort=downloads", "Browse Audiobooks"),
                 {"href": "/opds/search?sort=release_date&sort_order=desc", "title": "Recently Added", "type": OPDS_TYPE, "rel": "http://opds-spec.org/sort/new"},
                 {"href": "/opds/search?sort=random", "title": "Random", "type": OPDS_TYPE, "rel": "http://opds-spec.org/sort/random"},
             ],
@@ -516,14 +517,14 @@ class OPDSFeed:
 
         facets = self._facets(facet_url, query, lang, copyrighted, audiobook, sort, sort_order, subjects)
 
-        # LoCC genre facet
-        locc_base = {**base, "query": query, "page": 1}
-        locc_facet = {
-            "metadata": {"title": "Main Category"},
-            "links": [_facet(_url("/opds/search", {**locc_base, "locc": ""}), "Any", not locc)]
-            + [_facet(_url("/opds/search", {**locc_base, "locc": item.code}), item.label, locc == item.code) for item in LoCCMainClass],
-        }
-        facets.insert(2 if subjects else 1, locc_facet)
+        # LoCC genre facet - only show when no category selected
+        if not locc:
+            locc_base = {**base, "query": query, "page": 1}
+            locc_facet = {
+                "metadata": {"title": "Main Category"},
+                "links": [_facet(_url("/opds/search", {**locc_base, "locc": item.code}), item.label, False) for item in LoCCMainClass],
+            }
+            facets.insert(2 if subjects else 1, locc_facet)
 
         feed = {
             "metadata": {"title": "Gutenberg Search Results", "numberOfItems": result["total"], "itemsPerPage": result["page_size"], "currentPage": result["page"]},

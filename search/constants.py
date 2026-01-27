@@ -41,7 +41,6 @@ class SearchField(str, Enum):
 
 class OrderBy(str, Enum):
     """Sort options."""
-
     RELEVANCE = "relevance"
     DOWNLOADS = "downloads"
     TITLE = "title"
@@ -56,11 +55,9 @@ class SortDirection(str, Enum):
 
 
 class Crosswalk(str, Enum):
-    FULL = "full"
     PG = "pg"
     OPDS = "opds"
     CUSTOM = "custom"
-    MINI = "mini"
 
 
 class Language(Enum):
