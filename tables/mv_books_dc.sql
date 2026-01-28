@@ -2,6 +2,7 @@
 -- Based on libgutenberg DublinCoreMapping.py
 -- Precomputes joins into cache for faster search results and filter operations.
 -- This materialized view is intended to be refreshed periodically.
+-- Make sure to run before upgrading Postgres as the pg_trgm extension will have to be manually removed and re-installed otherwise.
 
 BEGIN;
 
@@ -9,14 +10,18 @@ SET LOCAL client_min_messages = WARNING;
 
 DO $$
 BEGIN
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-EXCEPTION 
-    WHEN duplicate_function THEN
-        BEGIN
-            EXECUTE 'CREATE EXTENSION pg_trgm FROM unpackaged';
-        EXCEPTION WHEN OTHERS THEN
-            NULL;
-        END;
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm') THEN
+        RETURN;
+    END IF;
+    
+    BEGIN
+        CREATE EXTENSION pg_trgm;
+    EXCEPTION 
+        WHEN duplicate_function THEN
+            CREATE EXTENSION pg_trgm FROM unpackaged;
+    END;
+    
+    ALTER EXTENSION pg_trgm UPDATE;
 END $$;
 
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
