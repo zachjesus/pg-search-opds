@@ -18,10 +18,8 @@ BEGIN
         CREATE EXTENSION pg_trgm;
     EXCEPTION 
         WHEN duplicate_function THEN
-            CREATE EXTENSION pg_trgm FROM unpackaged;
+            EXECUTE 'CREATE EXTENSION pg_trgm FROM unpackaged';
     END;
-    
-    ALTER EXTENSION pg_trgm UPDATE;
 END $$;
 
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
