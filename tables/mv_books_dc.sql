@@ -25,7 +25,6 @@ END $$;
 DROP MATERIALIZED VIEW IF EXISTS mv_books_dc CASCADE;
 CREATE MATERIALIZED VIEW mv_books_dc AS
 SELECT
-    -- From books table
     b.pk AS book_id,
     b.title,
     -- Subtitle (raw MARC 245)
@@ -58,7 +57,7 @@ SELECT
          WHERE mbbs.fk_books = b.pk)
     ) AS book_text,
 
-    -- All language codes as array for multi-language filtering
+    -- All language codes as array
     COALESCE((
         SELECT ARRAY_AGG(DISTINCT l.pk::text)
         FROM mn_books_langs mbl
@@ -99,7 +98,7 @@ SELECT
         WHERE mba.fk_books = b.pk AND au.died_floor > 0
     ) AS min_author_deathyear,
 
-    -- LoCC codes as array for fast filtering
+    -- LoCC codes as array 
     COALESCE((
         SELECT ARRAY_AGG(lc.pk)
         FROM mn_books_loccs mblc
@@ -107,7 +106,7 @@ SELECT
         WHERE mblc.fk_books = b.pk
     ), ARRAY[]::text[]) AS locc_codes,
 
-    -- Creators (ordered for stable output)
+    -- Creator Information (all field ordered)
     (
         SELECT ARRAY_AGG(au.pk ORDER BY mba.heading, r.role, au.author)
         FROM mn_books_authors mba
