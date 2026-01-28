@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import cherrypy
 
@@ -234,7 +234,7 @@ class OPDSFeed:
         return {
             "metadata": {"title": "Bookshelves", "numberOfItems": len(CuratedBookshelves)},
             "links": [_link("self", "/opds/bookshelves"), _link("start", "/opds/"), _link("up", "/opds/")],
-            "navigation": [_nav(f"/opds/bookshelves?category={quote(cat.genre)}", f"{cat.genre} ({len(cat.shelves)} shelves)") for cat in CuratedBookshelves],
+            "navigation": [_nav(f"/opds/bookshelves?category={cat.name}", f"{cat.genre} ({len(cat.shelves)} shelves)") for cat in CuratedBookshelves],
         }
 
     def _bookshelf_books(self, shelf_id: int, page: int, limit: int, query: str, lang: str, copyrighted: str, audiobook: str, sort: str, sort_order: str):
@@ -243,7 +243,7 @@ class OPDSFeed:
         for cat in CuratedBookshelves:
             for sid, sname in cat.shelves:
                 if sid == shelf_id:
-                    name, parent = sname, cat.genre
+                    name, parent = sname, cat.name
                     break
             if parent:
                 break
@@ -268,7 +268,7 @@ class OPDSFeed:
             subjects_q.search(query, search_type=_search_type("keyword"))
         self._filter(subjects_q, lang, copyrighted, audiobook)
 
-        up = f"/opds/bookshelves?category={quote(parent)}" if parent else "/opds/bookshelves"
+        up = f"/opds/bookshelves?category={parent}" if parent else "/opds/bookshelves"
         feed = {
             "metadata": {"title": name, "numberOfItems": result["total"], "itemsPerPage": result["page_size"], "currentPage": result["page"]},
             "links": [_link("self", page_url(result["page"])), _link("start", "/opds/"), _link("up", up), _link("search", f"/opds/bookshelves?id={shelf_id}{{&query}}", templated=True)],
@@ -280,7 +280,7 @@ class OPDSFeed:
 
     def _bookshelf_category(self, category: str):
         """List shelves in a category with samples."""
-        found = next((cat for cat in CuratedBookshelves if cat.genre == category), None)
+        found = next((cat for cat in CuratedBookshelves if cat.name == category), None)
         if not found:
             raise cherrypy.HTTPError(404, "Category not found")
 
@@ -302,8 +302,8 @@ class OPDSFeed:
                 counts[s["id"]] = 0
 
         return {
-            "metadata": {"title": category, "numberOfItems": len(shelves)},
-            "links": [_link("self", f"/opds/bookshelves?category={quote(category)}"), _link("start", "/opds/"), _link("up", "/opds/bookshelves")],
+            "metadata": {"title": found.genre, "numberOfItems": len(shelves)},
+            "links": [_link("self", f"/opds/bookshelves?category={category}"), _link("start", "/opds/"), _link("up", "/opds/bookshelves")],
             "navigation": [_nav(f"/opds/bookshelves?id={s['id']}", f"{s['name']} ({counts.get(s['id'], 0)} books)") for s in shelves],
             "groups": groups,
         }
