@@ -167,28 +167,10 @@ def crosswalk_opds(row) -> dict[str, Any]:
         accessibility["accessMode"] = ["auditory"]
         accessibility["accessModeSufficient"] = [["auditory"]]
         accessibility["feature"] = ["unlocked"]
-        has_zip = any((f.get("filename") or "").endswith(("-mp3.zip", "_mp3.zip")) for f in formats)
-        if has_zip:
-            accessibility["summary"] = "This is an audiobook. Available as MP3 download (ZIP) or streaming if your reader supports it."
-        else:
-            accessibility["summary"] = "This is an audiobook. Available for streaming if supported by your reader."
     else:
         accessibility["accessMode"] = ["textual"]
         accessibility["accessModeSufficient"] = [["textual"]]
-        available = []
-        if any("epub" in (f.get("filetype") or "").lower() for f in formats):
-            available.append("EPUB")
-        if any((f.get("filetype") or "").lower() == "html" for f in formats):
-            available.append("HTML")
-        if any("kindle" in (f.get("filetype") or "").lower() for f in formats):
-            available.append("Kindle")
-        if any("pdf" in (f.get("filetype") or "").lower() for f in formats):
-            available.append("PDF")
-        if any((f.get("filetype") or "").lower() in ("txt", "txt.utf-8") for f in formats):
-            available.append("Plain Text")
         accessibility["feature"] = ["displayTransformability", "unlocked"]
-        fmt_str = ", ".join(available) if available else "multiple formats"
-        accessibility["summary"] = f"This publication is available in {fmt_str}. No DRM restrictions."
     metadata["accessibility"] = accessibility
 
     authors = [c for c in creators if c.get("role", "").lower() in ("author", "aut", "creator", "cre", "")]
